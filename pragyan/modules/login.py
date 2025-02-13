@@ -87,7 +87,7 @@ async def generate_session(client, message):
             client_instance = Client(f"session_{user_id}", api_id, api_hash)
             await client_instance.connect()
 
-            # Attempt to log in with the provided phone number and catch SessionPasswordNeeded
+            # Attempt to send OTP to the provided phone number
             try:
                 code = await client_instance.send_code(phone_number)
             except ApiIdInvalid:
@@ -96,11 +96,14 @@ async def generate_session(client, message):
             except PhoneNumberInvalid:
                 await message.reply('❌ Invalid phone number. Please restart the session.')
                 return
-            except SessionPasswordNeeded:
-                # This error occurs if two-step verification is enabled
-                await message.reply("Your account has two-step verification enabled. Please enter your password.")
 
-                # Wait for the user to input the password
+            # If two-step verification is enabled, handle SessionPasswordNeeded error
+            try:
+                await client_instance.sign_in(phone_number, code.phone_code_hash, None)  # Don't pass OTP yet
+            except SessionPasswordNeeded:
+                await message.reply("Two-step verification is enabled on your account. Please enter your password.")
+
+                # Wait for the user to input the 2FA password
                 password_response = await app.listen(
                     user_id, filters=filters.text, timeout=300  # 5 minutes timeout
                 )
@@ -118,7 +121,7 @@ async def generate_session(client, message):
                     await message.reply('❌ Invalid password. Please restart the session.')
                     return
 
-            # After password verification (if needed), ask the user for the OTP
+            # Now that the password has been verified (if needed), ask the user for the OTP
             await message.reply("Please enter the OTP you received in the following format: 7 3 5 2 4")
 
             @app.on_message(filters.text & filters.user(user_id))
