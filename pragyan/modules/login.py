@@ -1,3 +1,17 @@
+# ---------------------------------------------------
+# File Name: login.py
+# Description: A Pyrogram bot for downloading files from Telegram channels or groups 
+#              and uploading them back to Telegram.
+# Author: Gagan
+# GitHub: https://github.com/pragyanin/
+# Telegram: https://t.me/team_spy_pro
+# YouTube: https://youtube.com/@dev_gagan
+# Created: 2025-01-11
+# Last Modified: 2025-01-11
+# Version: 2.0.5
+# License: MIT License
+# ---------------------------------------------------
+
 from pyrogram import filters, Client
 from pragyan import app
 import random
@@ -60,32 +74,23 @@ async def generate_session(_, message):
     joined = await subscribe(_, message)
     if joined == 1:
         return
-
+        
     # user_checked = await chk_user(message, message.from_user.id)
     # if user_checked == 1:
         # return
         
     user_id = message.chat.id   
-
-    # Custom method to wait for the user's message
-    async def wait_for_message(client, user_id, timeout=60):
-        try:
-            message = await client.listen(filters.text & filters.user(user_id), timeout=timeout)
-            return message
-        except asyncio.TimeoutError:
-            raise TimeoutError("Timeout reached while waiting for the message.")
-
+    
+    number = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=filters.text)   
+    phone_number = number.text
     try:
-        # Wait for the phone number message from the user
-        number_msg = await wait_for_message(_, user_id, timeout=60)
-        phone_number = number_msg.text
-        
         await message.reply("📲 Sending OTP...")
-
         client = Client(f"session_{user_id}", api_id, api_hash)
-        await client.connect()
         
-        # Send OTP to the phone number
+        await client.connect()
+    except Exception as e:
+        await message.reply(f"❌ Failed to send OTP {e}. Please wait and try again later.")
+    try:
         code = await client.send_code(phone_number)
     except ApiIdInvalid:
         await message.reply('❌ Invalid combination of API ID and API HASH. Please restart the session.')
@@ -93,17 +98,14 @@ async def generate_session(_, message):
     except PhoneNumberInvalid:
         await message.reply('❌ Invalid phone number. Please restart the session.')
         return
-    except Exception as e:
-        await message.reply(f"❌ Failed to send OTP: {e}")
-        return
-
     try:
-        # Wait for the OTP from the user
-        otp_code_msg = await wait_for_message(_, user_id, timeout=600)
-        otp_code = otp_code_msg.text.replace(" ", "")
-        
-        # Sign in the user using the OTP
-        await client.sign_in(phone_number, code.phone_code_hash, otp_code)
+        otp_code = await _.ask(user_id, "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=filters.text, timeout=600)
+    except TimeoutError:
+        await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
+        return
+    phone_code = otp_code.text.replace(" ", "")
+    try:
+        await client.sign_in(phone_number, code.phone_code_hash, phone_code)
                 
     except PhoneCodeInvalid:
         await message.reply('❌ Invalid OTP. Please restart the session.')
@@ -113,20 +115,17 @@ async def generate_session(_, message):
         return
     except SessionPasswordNeeded:
         try:
-            two_step_msg = await wait_for_message(_, user_id, 'Your account has two-step verification enabled. Please enter your password.', timeout=300)
+            two_step_msg = await _.ask(user_id, 'Your account has two-step verification enabled. Please enter your password.', filters=filters.text, timeout=300)
+        except TimeoutError:
+            await message.reply('⏰ Time limit of 5 minutes exceeded. Please restart the session.')
+            return
+        try:
             password = two_step_msg.text
             await client.check_password(password=password)
         except PasswordHashInvalid:
             await two_step_msg.reply('❌ Invalid password. Please restart the session.')
             return
-        except TimeoutError:
-            await message.reply('⏰ Time limit of 5 minutes exceeded. Please restart the session.')
-            return
-
-    # Export session string and save to database
     string_session = await client.export_session_string()
     await db.set_session(user_id, string_session)
-    
     await client.disconnect()
-    
-    await otp_code_msg.reply("✅ Login successful!")
+    await otp_code.reply("✅ Login successful!")
