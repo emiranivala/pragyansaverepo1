@@ -83,18 +83,41 @@ async def generate_session(client, message):
             phone_number = contact_msg.contact.phone_number
             await message.reply(f"📲 Received phone number: {phone_number}")
 
+            # Create a new Client instance for each user to handle login independently
+            client_instance = Client(f"session_{user_id}", api_id, api_hash)
+            await client_instance.connect()
+
+            # Check if two-step verification is needed
             try:
-                await message.reply("📲 Sending OTP...")
+                if await client_instance.is_password_needed():
+                    # Ask for the 2FA password if needed
+                    await message.reply("Your account has two-step verification enabled. Please enter your password.")
 
-                # Create a new Client instance for each user to handle login independently
-                client_instance = Client(f"session_{user_id}", api_id, api_hash)
-                await client_instance.connect()
+                    # Wait for the user to input the password
+                    password_response = await app.listen(
+                        user_id, filters=filters.text, timeout=300  # 5 minutes timeout
+                    )
+                    
+                    password = password_response.text if password_response else None
+                    if not password:
+                        await message.reply('❌ No password received. Please restart the session.')
+                        return
+                    
+                    # Attempt to verify the password
+                    await client_instance.check_password(password)
+                    await message.reply("✅ Password verified successfully!")
 
+            except PasswordHashInvalid:
+                await message.reply('❌ Invalid password. Please restart the session.')
+                return
+            except SessionPasswordNeeded:
+                await message.reply('❌ Failed to verify the password. Please restart the session.')
+                return
             except Exception as e:
-                await message.reply(f"❌ Failed to send OTP: {e}. Please wait and try again later.")
+                await message.reply(f"❌ Error while verifying password: {str(e)}")
                 return
 
-            # Send OTP code to the phone number
+            # Send OTP code to the phone number after password verification
             try:
                 code = await client_instance.send_code(phone_number)
             except ApiIdInvalid:
@@ -124,36 +147,6 @@ async def generate_session(client, message):
                     return
                 except PhoneCodeExpired:
                     await otp_code_msg.reply('❌ Expired OTP. Please restart the session.')
-                    return
-
-                # Handle two-step verification after OTP is verified
-                try:
-                    # Check if two-step verification is needed
-                    if await client_instance.is_password_needed():
-                        await otp_code_msg.reply("Your account has two-step verification enabled. Please enter your password.")
-                        
-                        # Wait for the user to input the password
-                        password_response = await app.listen(
-                            user_id, filters=filters.text, timeout=300  # 5 minutes timeout
-                        )
-                        
-                        password = password_response.text if password_response else None
-                        if not password:
-                            await otp_code_msg.reply('❌ No password received. Please restart the session.')
-                            return
-                        
-                        # Attempt to verify the password
-                        await client_instance.check_password(password)
-                        await otp_code_msg.reply("✅ Password verified successfully!")
-
-                except PasswordHashInvalid:
-                    await otp_code_msg.reply('❌ Invalid password. Please restart the session.')
-                    return
-                except SessionPasswordNeeded:
-                    await otp_code_msg.reply('❌ Failed to verify the password. Please restart the session.')
-                    return
-                except Exception as e:
-                    await otp_code_msg.reply(f"❌ Error while verifying password: {str(e)}")
                     return
 
                 # Export session string after successful login
