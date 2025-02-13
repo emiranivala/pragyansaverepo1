@@ -3,7 +3,7 @@
 # Description: A Pyrogram bot for downloading files from Telegram channels or groups 
 #              and uploading them back to Telegram.
 # Author: Gagan
-# GitHub: https://github.com/devgaganin/
+# GitHub: https://github.com/pragyanin/
 # Telegram: https://t.me/team_spy_pro
 # YouTube: https://youtube.com/@dev_gagan
 # Created: 2025-01-11
@@ -13,13 +13,13 @@
 # ---------------------------------------------------
 
 from pyrogram import filters, Client
-from devgagan import app
+from pragyan import app
 import random
 import os
 import asyncio
 import string
-from devgagan.core.mongo import db
-from devgagan.core.func import subscribe, chk_user
+from pragyan.core.mongo import db
+from pragyan.core.func import subscribe, chk_user
 from config import API_ID as api_id, API_HASH as api_hash
 from pyrogram.errors import (
     ApiIdInvalid,
