@@ -1,3 +1,9 @@
+from pyrogram import filters, Client
+from pragyan import app
+import random
+import os
+import asyncio
+import string
 from pyrogram import filters
 from pyrogram.types import KeyboardButton, ReplyKeyboardMarkup
 from pyrogram.errors import (
