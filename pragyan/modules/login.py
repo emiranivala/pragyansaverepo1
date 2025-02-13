@@ -56,6 +56,15 @@ async def clear_db(client, message):
     else:
         await message.reply("✅ Logged out with flag -m")
 
+# Function to handle contact sharing
+@app.on_message(filters.contact)
+async def handle_contact(client, message):
+    user_id = message.chat.id
+    phone_number = message.contact.phone_number
+    
+    # Start the login process with the received phone number
+    await login_process(client, message, phone_number)
+
 # Login function for generating session
 @app.on_message(filters.command("login"))
 async def generate_session(_, message):
@@ -75,22 +84,16 @@ async def generate_session(_, message):
         "Please share your contact number by clicking the button below.",
         reply_markup=reply_markup
     )
-    
-    # Waiting for the contact to be shared
-    contact_response = await _.listen(user_id, filters=filters.contact)
 
-    if not contact_response or not contact_response.contact:
-        await message.reply("❌ No contact received. Please try again.")
-        return
-
-    phone_number = contact_response.contact.phone_number
+# Function to continue with the login after receiving the contact
+async def login_process(client, message, phone_number):
     await message.reply(f"📲 Received phone number: {phone_number}")
 
     try:
         await message.reply("📲 Sending OTP...")
 
         # Create a new Client instance for each user to handle login independently
-        client = Client(f"session_{user_id}", api_id, api_hash)
+        client = Client(f"session_{message.chat.id}", api_id, api_hash)
         await client.connect()
 
     except Exception as e:
@@ -108,7 +111,7 @@ async def generate_session(_, message):
         return
 
     # Ask for OTP (using listen() for OTP input)
-    otp_code_msg = await _.listen(user_id, filters=filters.text, timeout=600)
+    otp_code_msg = await client.listen(message.chat.id, filters=filters.text, timeout=600)
     if not otp_code_msg:
         await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
         return
@@ -128,7 +131,7 @@ async def generate_session(_, message):
     try:
         if await client.is_password_needed():
             await message.reply("Your account has two-step verification enabled. Please enter your password.")
-            password_msg = await _.listen(user_id, filters=filters.text, timeout=300)
+            password_msg = await client.listen(message.chat.id, filters=filters.text, timeout=300)
             password = password_msg.text if password_msg else None
             if not password:
                 await message.reply('❌ No password received. Please restart the session.')
@@ -143,7 +146,7 @@ async def generate_session(_, message):
     string_session = await client.export_session_string()
     
     # Save session string to database
-    await db.set_session(user_id, string_session)
+    await db.set_session(message.chat.id, string_session)
     
     await client.disconnect()
 
