@@ -110,45 +110,50 @@ async def login_process(client, message, phone_number):
         await message.reply('❌ Invalid phone number. Please restart the session.')
         return
 
-    # Ask for OTP (using listen() for OTP input)
-    otp_code_msg = await client.listen(message.chat.id, filters=filters.text, timeout=600)
-    if not otp_code_msg:
-        await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
-        return
-    
-    phone_code = otp_code_msg.text.replace(" ", "")
-    
-    try:
-        await client.sign_in(phone_number, code.phone_code_hash, phone_code)
-    except PhoneCodeInvalid:
-        await message.reply('❌ Invalid OTP. Please restart the session.')
-        return
-    except PhoneCodeExpired:
-        await message.reply('❌ Expired OTP. Please restart the session.')
-        return
+    # Ask the user to enter the OTP
+    await message.reply("Please enter the OTP you received (in the format: 12345).")
 
-    # If two-step verification is enabled
-    try:
-        if await client.is_password_needed():
-            await message.reply("Your account has two-step verification enabled. Please enter your password.")
-            password_msg = await client.listen(message.chat.id, filters=filters.text, timeout=300)
-            password = password_msg.text if password_msg else None
-            if not password:
-                await message.reply('❌ No password received. Please restart the session.')
-                return
-            
-            await client.check_password(password)
-    except PasswordHashInvalid:
-        await message.reply('❌ Invalid password. Please restart the session.')
-        return
+    # Capture OTP input from the user
+    @app.on_message(filters.text & filters.user(message.chat.id))
+    async def otp_handler(otp_msg):
+        phone_code = otp_msg.text.replace(" ", "")
+        
+        if len(phone_code) < 5:
+            await otp_msg.reply("❌ Invalid OTP format. Please enter the correct OTP.")
+            return
 
-    # Export session string
-    string_session = await client.export_session_string()
-    
-    # Save session string to database
-    await db.set_session(message.chat.id, string_session)
-    
-    await client.disconnect()
+        try:
+            # Sign in with the OTP
+            await client.sign_in(phone_number, code.phone_code_hash, phone_code)
+        except PhoneCodeInvalid:
+            await otp_msg.reply('❌ Invalid OTP. Please restart the session.')
+            return
+        except PhoneCodeExpired:
+            await otp_msg.reply('❌ Expired OTP. Please restart the session.')
+            return
 
-    # Respond to the user
-    await otp_code_msg.reply("✅ Login successful!")
+        # If two-step verification is enabled
+        try:
+            if await client.is_password_needed():
+                await otp_msg.reply("Your account has two-step verification enabled. Please enter your password.")
+                password_msg = await client.listen(message.chat.id, filters=filters.text, timeout=300)
+                password = password_msg.text if password_msg else None
+                if not password:
+                    await otp_msg.reply('❌ No password received. Please restart the session.')
+                    return
+                
+                await client.check_password(password)
+        except PasswordHashInvalid:
+            await otp_msg.reply('❌ Invalid password. Please restart the session.')
+            return
+
+        # Export session string
+        string_session = await client.export_session_string()
+        
+        # Save session string to database
+        await db.set_session(message.chat.id, string_session)
+        
+        await client.disconnect()
+
+        # Respond to the user
+        await otp_msg.reply("✅ Login successful!")
