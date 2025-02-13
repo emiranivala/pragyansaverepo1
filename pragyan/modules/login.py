@@ -65,11 +65,11 @@ async def generate_session(_, message):
 
     user_id = message.chat.id
 
-    # Ask for phone number (Fix to use listen method for user input)
+    # Ask for phone number (using wait_for_message)
     phone_number_msg = await message.reply("Please enter your phone number along with the country code.\nExample: +19876543210")
-
-    # Waiting for the message from the user
-    phone_number_response = await _.listen(user_id, filters=filters.text)
+    
+    # Waiting for the message from the user using wait_for_message
+    phone_number_response = await _.wait_for_message(user_id, filters=filters.text)
 
     phone_number = phone_number_response.text if phone_number_response else None
 
@@ -79,8 +79,11 @@ async def generate_session(_, message):
     
     try:
         await message.reply("📲 Sending OTP...")
+
+        # Create a new Client instance for each user to handle login independently
         client = Client(f"session_{user_id}", api_id, api_hash)
         await client.connect()
+
     except Exception as e:
         await message.reply(f"❌ Failed to send OTP {e}. Please wait and try again later.")
         return
@@ -95,8 +98,8 @@ async def generate_session(_, message):
         await message.reply('❌ Invalid phone number. Please restart the session.')
         return
 
-    # Ask for OTP (Fix to use listen method for OTP input)
-    otp_code_msg = await _.listen(user_id, filters=filters.text, timeout=600)
+    # Ask for OTP (using wait_for_message)
+    otp_code_msg = await _.wait_for_message(user_id, filters=filters.text, timeout=600)
     if not otp_code_msg:
         await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
         return
@@ -116,7 +119,7 @@ async def generate_session(_, message):
     try:
         if await client.is_password_needed():
             await message.reply("Your account has two-step verification enabled. Please enter your password.")
-            password_msg = await _.listen(user_id, filters=filters.text, timeout=300)
+            password_msg = await _.wait_for_message(user_id, filters=filters.text, timeout=300)
             password = password_msg.text if password_msg else None
             if not password:
                 await message.reply('❌ No password received. Please restart the session.')
