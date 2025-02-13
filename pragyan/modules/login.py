@@ -1,9 +1,3 @@
-from pyrogram import filters, Client
-from pragyan import app
-import random
-import os
-import asyncio
-import string
 from pyrogram import Client, filters
 from pyrogram.types import KeyboardButton, ReplyKeyboardMarkup
 from config import API_ID as api_id, API_HASH as api_hash
@@ -16,8 +10,8 @@ from pyrogram.errors import (
     PasswordHashInvalid
 )
 import random
-import os
 import string
+import os
 from pragyan.core.mongo import db
 from pragyan.core.func import subscribe
 
@@ -89,7 +83,8 @@ async def generate_session(client, message):
             await message.reply(f"📲 Received phone number: {phone_number}")
 
             # Create a new Client instance for each user to handle login independently
-            client_instance = Client(f"session_{user_id}", api_id, api_hash)
+            session_name = generate_random_name()  # generate a random session name
+            client_instance = Client(session_name, api_id, api_hash)
             await client_instance.connect()
 
             # Attempt to send OTP to the provided phone number
@@ -126,6 +121,7 @@ async def generate_session(client, message):
                 try:
                     await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
                 except SessionPasswordNeeded:
+                    # Request password if two-step verification is enabled
                     password_msg = await message.reply("Your account has two-step verification enabled. Please enter your password.")
                         
                     # Wait for the user to input the password
@@ -154,5 +150,3 @@ async def generate_session(client, message):
 
                 # Final success message
                 await otp_msg.reply("✅ Login successful!")
-
-
