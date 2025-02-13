@@ -1,3 +1,10 @@
+from pyrogram import filters, Client
+from pragyan import app
+import random
+import os
+import asyncio
+import string
+from pyrogram import Client, filters
 from pyrogram import Client, filters
 from pyrogram.types import KeyboardButton, ReplyKeyboardMarkup
 from config import API_ID as api_id, API_HASH as api_hash
