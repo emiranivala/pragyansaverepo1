@@ -23,12 +23,6 @@ async def edit_or_reply(msg, **kwargs):
     await func(**{k: v for k, v in kwargs.items() if k in spec})
 
 
-@app.on_edited_message(
-    filters.command(["eval", "val"])
-    & filters.user(OWNER_ID)
-    & ~filters.forwarded
-    & ~filters.via_bot
-)
 @app.on_message(
     filters.command(["eval", "val"])
     & filters.user(OWNER_ID)
@@ -42,6 +36,7 @@ async def executor(client, message):
         cmd = message.text.split(" ", maxsplit=1)[1]
     except IndexError:
         return await message.delete()
+    
     t1 = time()
     old_stderr = sys.stderr
     old_stdout = sys.stdout
@@ -52,10 +47,12 @@ async def executor(client, message):
         await aexec(cmd, client, message)
     except Exception:
         exc = traceback.format_exc()
+    
     stdout = redirected_output.getvalue()
     stderr = redirected_error.getvalue()
     sys.stdout = old_stdout
     sys.stderr = old_stderr
+    
     evaluation = "\n"
     if exc:
         evaluation += exc
@@ -65,7 +62,10 @@ async def executor(client, message):
         evaluation += stdout
     else:
         evaluation += "sᴜᴄᴄᴇss"
-    final_output = f"<b>📕 ʀᴇsᴜʟᴛ :</b>\n<pre language='python'>{evaluation}</pre>"
+    
+    # Formatting output as a code block
+    final_output = f"<b>📕 ʀᴇsᴜʟᴛ :</b>\n<pre language='python'>```python\n{evaluation}\n```</pre>"
+    
     if len(final_output) > 4096:
         filename = "output.txt"
         with open(filename, "w+", encoding="utf8") as out_file:
@@ -107,40 +107,6 @@ async def executor(client, message):
         )
         await edit_or_reply(message, text=final_output, reply_markup=keyboard)
 
-
-@app.on_callback_query(filters.regex(r"runtime"))
-async def runtime_func_cq(_, cq):
-    runtime = cq.data.split(None, 1)[1]
-    await cq.answer(runtime, show_alert=True)
-
-
-@app.on_callback_query(filters.regex("fclose"))
-async def forceclose_command(_, CallbackQuery):
-    callback_data = CallbackQuery.data.strip()
-    callback_request = callback_data.split(None, 1)[1]
-    query, user_id = callback_request.split("|")
-    if CallbackQuery.from_user.id != int(user_id):
-        try:
-            return await CallbackQuery.answer(
-                "ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ʙᴀʙʏ.", show_alert=True
-            )
-        except:
-            return
-    await CallbackQuery.message.delete()
-    try:
-        await CallbackQuery.answer()
-    except:
-        return
-
-
-
-
-@app.on_edited_message(
-    filters.command("bash")
-    & filters.user(OWNER_ID)
-    & ~filters.forwarded
-    & ~filters.via_bot
-)
 @app.on_message(
     filters.command("bash")
     & filters.user(OWNER_ID)
@@ -149,7 +115,8 @@ async def forceclose_command(_, CallbackQuery):
 )
 async def shellrunner(_, message):
     if len(message.command) < 2:
-        return await edit_or_reply(message, text="<b>ᴇxᴀᴍᴩʟᴇ :</b>\n/sh git pull")
+        return await edit_or_reply(message, text="<b>ᴇxᴀᴍᴘʟᴇ :</b>\n/sh git pull")
+    
     text = message.text.split(None, 1)[1]
     if "\n" in text:
         code = text.split("\n")
@@ -189,8 +156,11 @@ async def shellrunner(_, message):
                 message, text=f"<b>ERROR :</b>\n<pre>{''.join(errors)}</pre>"
             )
         output = process.stdout.read()[:-1].decode("utf-8")
+    
     if str(output) == "\n":
         output = None
+    
+    # Format output as code block for shell commands
     if output:
         if len(output) > 4096:
             with open("output.txt", "w+") as file:
@@ -202,10 +172,40 @@ async def shellrunner(_, message):
                 caption="<code>Output</code>",
             )
             return os.remove("output.txt")
-        await edit_or_reply(message, text=f"<b>OUTPUT :</b>\n<pre>{output}</pre>")
+        await edit_or_reply(message, text=f"<b>OUTPUT :</b>\n<pre language='bash'>```bash\n{output}\n```</pre>")
     else:
         await edit_or_reply(message, text="<b>OUTPUT :</b>\n<code>None</code>")
     await message.stop_propagation()
+
+
+
+@app.on_callback_query(filters.regex(r"runtime"))
+async def runtime_func_cq(_, cq):
+    runtime = cq.data.split(None, 1)[1]
+    await cq.answer(runtime, show_alert=True)
+
+
+@app.on_callback_query(filters.regex("fclose"))
+async def forceclose_command(_, CallbackQuery):
+    callback_data = CallbackQuery.data.strip()
+    callback_request = callback_data.split(None, 1)[1]
+    query, user_id = callback_request.split("|")
+    if CallbackQuery.from_user.id != int(user_id):
+        try:
+            return await CallbackQuery.answer(
+                "ɪᴛ'ʟʟ ʙᴇ ʙᴇᴛᴛᴇʀ ɪғ ʏᴏᴜ sᴛᴀʏ ɪɴ ʏᴏᴜʀ ʟɪᴍɪᴛs ʙᴀʙʏ.", show_alert=True
+            )
+        except:
+            return
+    await CallbackQuery.message.delete()
+    try:
+        await CallbackQuery.answer()
+    except:
+        return
+
+
+
+
 
 
 @app.on_message(filters.command("restart") & filters.user(OWNER_ID))
