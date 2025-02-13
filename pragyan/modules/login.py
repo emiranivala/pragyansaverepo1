@@ -1,42 +1,81 @@
-from pyrogram import Client, filters
+from pyrogram import filters
 from pyrogram.types import KeyboardButton, ReplyKeyboardMarkup
-from pyrogram.errors import ApiIdInvalid, PhoneNumberInvalid, PhoneCodeInvalid, PhoneCodeExpired, SessionPasswordNeeded, PasswordHashInvalid
-from config import API_ID as api_id, API_HASH as api_hash
-import os
-import random
-import string
+from pyrogram.errors import (
+    ApiIdInvalid,
+    PhoneNumberInvalid,
+    PhoneCodeInvalid,
+    PhoneCodeExpired,
+    SessionPasswordNeeded,
+    PasswordHashInvalid,
+)
 from pragyan.core.mongo import db
 from pragyan.core.func import subscribe
+from config import API_ID as api_id, API_HASH as api_hash
+import random
+import os
+import string
+from pyrogram import Client
 
-# Instantiate the pyrogram Client
-app = Client("my_bot", api_id=api_id, api_hash=api_hash)
-
-# Function to generate random name (can be omitted if not needed)
+# Function to generate random name (optional)
 def generate_random_name(length=7):
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
 
-# Login function for generating session
+# Function to delete session files
+async def delete_session_files(user_id):
+    session_file = f"session_{user_id}.session"
+    memory_file = f"session_{user_id}.session-journal"
+
+    session_file_exists = os.path.exists(session_file)
+    memory_file_exists = os.path.exists(memory_file)
+
+    if session_file_exists:
+        os.remove(session_file)
+    
+    if memory_file_exists:
+        os.remove(memory_file)
+
+    # Delete session from the database
+    if session_file_exists or memory_file_exists:
+        await db.remove_session(user_id)
+        return True  # Files were deleted
+    return False  # No files found
+
+# Logout handler to delete session and files
+@app.on_message(filters.command("logout"))
+async def clear_db(client, message):
+    user_id = message.chat.id
+    files_deleted = await delete_session_files(user_id)
+    try:
+        await db.remove_session(user_id)
+    except Exception:
+        pass
+
+    if files_deleted:
+        await message.reply("✅ Your session data and files have been cleared from memory and disk.")
+    else:
+        await message.reply("✅ Logged out successfully.")
+
+# Login handler to generate session and handle OTP
 @app.on_message(filters.command("login"))
 async def generate_session(client, message):
-    user_id = message.chat.id
-
-    # Check subscription status
+    # Check if the user is subscribed
     joined = await subscribe(client, message)
     if joined == 1:
         return
 
-    # Ask the user to share their contact
+    user_id = message.chat.id
+
+    # Ask user to share contact
     contact_button = KeyboardButton("Share Contact", request_contact=True)
     reply_markup = ReplyKeyboardMarkup([[contact_button]], resize_keyboard=True)
 
-    # Send a message asking the user to share their contact
     phone_number_msg = await message.reply(
         "Please share your contact number by clicking the button below.",
         reply_markup=reply_markup
     )
 
-    # Wait for the user to share the contact
+    # Wait for user to share the contact
     @app.on_message(filters.contact & filters.user(user_id))
     async def contact_handler(_, contact_msg):
         if contact_msg.contact:
@@ -57,63 +96,48 @@ async def generate_session(client, message):
                 await message.reply('❌ Invalid phone number. Please restart the session.')
                 return
 
-            # Ask for OTP
-            await message.reply("Please enter the OTP you received in the following format: 7 3 5 2 4")
+            # Ask user to input OTP
+            otp_code_msg = await app.ask(user_id, 
+                                          "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.",
+                                          filters=filters.text, timeout=600)
 
-            @app.on_message(filters.text & filters.user(user_id))
-            async def otp_handler(_, otp_code_msg):
-                phone_code = otp_code_msg.text.replace(" ", "")  # Remove spaces
-                
-                # Validate OTP length (5 digits)
-                if len(phone_code) != 5 or not phone_code.isdigit():
-                    await otp_code_msg.reply("❌ Invalid OTP format. Please enter a 5-digit OTP in the format: 7 3 5 2 4.")
-                    return
+            # Validate OTP input
+            phone_code = otp_code_msg.text.replace(" ", "")
+            try:
+                await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
+            except PhoneCodeInvalid:
+                await otp_code_msg.reply('❌ Invalid OTP. Please restart the session.')
+                return
+            except PhoneCodeExpired:
+                await otp_code_msg.reply('❌ OTP has expired. Please restart the session.')
+                return
+
+            # Handle two-step verification
+            try:
+                await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
+            except SessionPasswordNeeded:
+                # Ask for the password if two-step verification is enabled
+                password_msg = await app.ask(user_id, 
+                                              'Your account has two-step verification enabled. Please enter your password.',
+                                              filters=filters.text, timeout=300)
+                password = password_msg.text
 
                 try:
-                    # Attempt to log in with the provided OTP
-                    await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
-                except PhoneCodeInvalid:
-                    await otp_code_msg.reply('❌ Invalid OTP. Please restart the session.')
-                    return
-                except PhoneCodeExpired:
-                    await otp_code_msg.reply('❌ Expired OTP. Please restart the session.')
+                    await client_instance.check_password(password=password)
+                    await message.reply("✅ Password verified successfully!")
+                except PasswordHashInvalid:
+                    await password_msg.reply('❌ Invalid password. Please restart the session.')
                     return
 
-                # If two-step verification is enabled, handle SessionPasswordNeeded error
-                try:
-                    await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
-                except SessionPasswordNeeded:
-                    await otp_code_msg.reply("Your account has two-step verification enabled. Please enter your password.")
+            # Export session string after successful login
+            string_session = await client_instance.export_session_string()
 
-                    # Wait for the user to input the 2FA password
-                    password_response = await app.listen(
-                        user_id, filters=filters.text, timeout=300  # 5 minutes timeout
-                    )
+            # Save session string to the database
+            await db.set_session(user_id, string_session)
 
-                    password = password_response.text if password_response else None
-                    if not password:
-                        await otp_code_msg.reply('❌ No password received. Please restart the session.')
-                        return
-                    
-                    # Attempt to verify the password
-                    try:
-                        await client_instance.check_password(password)
-                        await otp_code_msg.reply("✅ Password verified successfully!")
-                    except PasswordHashInvalid:
-                        await otp_code_msg.reply('❌ Invalid password. Please restart the session.')
-                        return
+            await client_instance.disconnect()
 
-                # Export session string after successful login
-                string_session = await client_instance.export_session_string()
-
-                # Save session string to database
-                await db.set_session(user_id, string_session)
-
-                await client_instance.disconnect()
-
-                # Respond to the user
-                await otp_code_msg.reply("✅ Login successful!")
-
-            return  # End the contact handler
+            # Inform user about successful login
+            await otp_code_msg.reply("✅ Login successful!")
         else:
             await message.reply("❌ No valid contact received. Please try again.")
