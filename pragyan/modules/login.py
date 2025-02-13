@@ -1,11 +1,10 @@
-from pyrogram import filters, Client
+from pyrogram import Client, filters
 from pragyan import app
 import random
 import os
-import asyncio
 import string
 from pragyan.core.mongo import db
-from pragyan.core.func import subscribe, chk_user
+from pragyan.core.func import subscribe
 from config import API_ID as api_id, API_HASH as api_hash
 from pyrogram.errors import (
     ApiIdInvalid,
@@ -14,13 +13,12 @@ from pyrogram.errors import (
     PhoneCodeExpired,
     SessionPasswordNeeded,
     PasswordHashInvalid,
-    FloodWait
 )
 
 # Function to generate random name
 def generate_random_name(length=7):
     characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))  # Editted ... 
+    return ''.join(random.choice(characters) for _ in range(length))
 
 # Async function to delete session files
 async def delete_session_files(user_id):
@@ -65,15 +63,14 @@ async def generate_session(_, message):
     if joined == 1:
         return
 
-    # user_checked = await chk_user(message, message.from_user.id)
-    # if user_checked == 1:
-        # return
-
     user_id = message.chat.id
 
     # Ask for phone number (Fix to use ask method for user input)
-    phone_number_msg = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=filters.text)
-    phone_number = phone_number_msg.text if phone_number_msg else None
+    phone_number_msg = await message.reply("Please enter your phone number along with the country code.\nExample: +19876543210")
+
+    # Waiting for the message from the user
+    phone_number_response = await _.ask(user_id, filters=filters.text)
+    phone_number = phone_number_response.text if phone_number_response else None
 
     if not phone_number:
         await message.reply("❌ No phone number received. Please try again.")
