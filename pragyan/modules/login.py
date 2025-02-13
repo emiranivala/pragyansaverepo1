@@ -126,12 +126,13 @@ async def generate_session(client, message):
                     await otp_code_msg.reply('❌ Expired OTP. Please restart the session.')
                     return
 
-                # If two-step verification is enabled, ask for the password
+                # Handle two-step verification after OTP is verified
                 try:
+                    # Check if two-step verification is needed
                     if await client_instance.is_password_needed():
                         await otp_code_msg.reply("Your account has two-step verification enabled. Please enter your password.")
                         
-                        # Wait for user to enter the password
+                        # Wait for the user to input the password
                         password_response = await app.listen(
                             user_id, filters=filters.text, timeout=300  # 5 minutes timeout
                         )
@@ -141,12 +142,15 @@ async def generate_session(client, message):
                             await otp_code_msg.reply('❌ No password received. Please restart the session.')
                             return
                         
-                        # Try to check the provided password
+                        # Attempt to verify the password
                         await client_instance.check_password(password)
                         await otp_code_msg.reply("✅ Password verified successfully!")
 
                 except PasswordHashInvalid:
                     await otp_code_msg.reply('❌ Invalid password. Please restart the session.')
+                    return
+                except SessionPasswordNeeded:
+                    await otp_code_msg.reply('❌ Failed to verify the password. Please restart the session.')
                     return
                 except Exception as e:
                     await otp_code_msg.reply(f"❌ Error while verifying password: {str(e)}")
