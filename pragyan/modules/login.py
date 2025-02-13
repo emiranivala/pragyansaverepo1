@@ -14,7 +14,6 @@ from pyrogram.errors import (
     SessionPasswordNeeded,
     PasswordHashInvalid,
 )
-from pyrogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 # Function to generate random name
 def generate_random_name(length=7):
@@ -56,15 +55,6 @@ async def clear_db(client, message):
     else:
         await message.reply("✅ Logged out with flag -m")
 
-# Function to handle contact sharing
-@app.on_message(filters.contact)
-async def handle_contact(client, message):
-    user_id = message.chat.id
-    phone_number = message.contact.phone_number
-    
-    # Start the login process with the received phone number
-    await login_process(client, message, phone_number)
-
 # Login function for generating session
 @app.on_message(filters.command("login"))
 async def generate_session(_, message):
@@ -75,25 +65,23 @@ async def generate_session(_, message):
 
     user_id = message.chat.id
 
-    # Ask the user to share their contact
-    contact_button = KeyboardButton("Share Contact", request_contact=True)
-    reply_markup = ReplyKeyboardMarkup([[contact_button]], resize_keyboard=True)
+    # Ask for phone number (using wait_for_message)
+    phone_number_msg = await message.reply("Please enter your phone number along with the country code.\nExample: +19876543210")
+    
+    # Waiting for the message from the user using wait_for_message
+    phone_number_response = await _.wait_for_message(user_id, filters=filters.text)
 
-    # Send a message asking the user to share their contact
-    phone_number_msg = await message.reply(
-        "Please share your contact number by clicking the button below.",
-        reply_markup=reply_markup
-    )
+    phone_number = phone_number_response.text if phone_number_response else None
 
-# Function to continue with the login after receiving the contact
-async def login_process(client, message, phone_number):
-    await message.reply(f"📲 Received phone number: {phone_number}")
-
+    if not phone_number:
+        await message.reply("❌ No phone number received. Please try again.")
+        return
+    
     try:
         await message.reply("📲 Sending OTP...")
 
         # Create a new Client instance for each user to handle login independently
-        client = Client(f"session_{message.chat.id}", api_id, api_hash)
+        client = Client(f"session_{user_id}", api_id, api_hash)
         await client.connect()
 
     except Exception as e:
@@ -111,17 +99,17 @@ async def login_process(client, message, phone_number):
         return
 
     # Ask the user to enter the OTP
-    await message.reply("Please enter the OTP you received (in the format: 7 8 7 8 8 4).")
+    await message.reply("Please enter the OTP you received (in the format: 5 4 7 2 3).")
 
     # Capture OTP input from the user
-    @app.on_message(filters.text & filters.user(message.chat.id))
+    @app.on_message(filters.text & filters.user(user_id))
     async def otp_handler(client, otp_msg):
-        # Ensure the OTP is in the correct format (numbers with spaces)
+        # Remove spaces from the OTP entered by the user
         phone_code = otp_msg.text.replace(" ", "")
         
-        # Validate the OTP
-        if len(phone_code) != 6 or not phone_code.isdigit():
-            await otp_msg.reply("❌ Invalid OTP format. Please enter the correct OTP.")
+        # Validate the OTP (check if it's 5 digits)
+        if len(phone_code) != 5 or not phone_code.isdigit():
+            await otp_msg.reply("❌ Invalid OTP format. Please enter a 5-digit OTP in the format: 5 4 7 2 3.")
             return
 
         try:
@@ -138,7 +126,7 @@ async def login_process(client, message, phone_number):
         try:
             if await client.is_password_needed():
                 await otp_msg.reply("Your account has two-step verification enabled. Please enter your password.")
-                password_msg = await client.listen(message.chat.id, filters=filters.text, timeout=300)
+                password_msg = await client.listen(user_id, filters=filters.text, timeout=300)
                 password = password_msg.text if password_msg else None
                 if not password:
                     await otp_msg.reply('❌ No password received. Please restart the session.')
@@ -153,7 +141,7 @@ async def login_process(client, message, phone_number):
         string_session = await client.export_session_string()
         
         # Save session string to database
-        await db.set_session(message.chat.id, string_session)
+        await db.set_session(user_id, string_session)
         
         await client.disconnect()
 
