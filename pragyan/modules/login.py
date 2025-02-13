@@ -111,14 +111,16 @@ async def login_process(client, message, phone_number):
         return
 
     # Ask the user to enter the OTP
-    await message.reply("Please enter the OTP you received (in the format: 12345).")
+    await message.reply("Please enter the OTP you received (in the format: 7 8 7 8 8 4).")
 
     # Capture OTP input from the user
     @app.on_message(filters.text & filters.user(message.chat.id))
-    async def otp_handler(otp_msg):
+    async def otp_handler(client, otp_msg):
+        # Ensure the OTP is in the correct format (numbers with spaces)
         phone_code = otp_msg.text.replace(" ", "")
         
-        if len(phone_code) < 5:
+        # Validate the OTP
+        if len(phone_code) != 6 or not phone_code.isdigit():
             await otp_msg.reply("❌ Invalid OTP format. Please enter the correct OTP.")
             return
 
