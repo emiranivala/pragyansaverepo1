@@ -15,14 +15,11 @@ from pyrogram.errors import (
     SessionPasswordNeeded,
     PasswordHashInvalid,
 )
-from pyrogram.types import Message
-
 
 # Function to generate random name
 def generate_random_name(length=7):
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
-
 
 # Async function to delete session files
 async def delete_session_files(user_id):
@@ -44,7 +41,6 @@ async def delete_session_files(user_id):
         return True  # Files were deleted
     return False  # No files found
 
-
 # Logout function to clear the database and session files
 @app.on_message(filters.command("logout"))
 async def clear_db(client, message):
@@ -59,7 +55,6 @@ async def clear_db(client, message):
         await message.reply("✅ Your session data and files have been cleared from memory and disk.")
     else:
         await message.reply("✅ Logged out with flag -m")
-
 
 # Login function for generating session
 @app.on_message(filters.command("login"))
@@ -81,81 +76,87 @@ async def generate_session(client, message):
         reply_markup=reply_markup
     )
 
-    # Wait for the contact to be shared
-    contact_response = await client.listen(user_id, filters=filters.contact)
+    # Wait for the user to share the contact
+    @app.on_message(filters.contact & filters.user(user_id))
+    async def contact_handler(_, contact_msg):
+        if contact_msg.contact:
+            phone_number = contact_msg.contact.phone_number
+            await message.reply(f"📲 Received phone number: {phone_number}")
 
-    if not contact_response or not contact_response.contact:
-        await message.reply("❌ No contact received. Please try again.")
-        return
+            try:
+                await message.reply("📲 Sending OTP...")
 
-    phone_number = contact_response.contact.phone_number
-    await message.reply(f"📲 Received phone number: {phone_number}")
+                # Create a new Client instance for each user to handle login independently
+                client_instance = Client(f"session_{user_id}", api_id, api_hash)
+                await client_instance.connect()
 
-    try:
-        await message.reply("📲 Sending OTP...")
-
-        # Create a new Client instance for each user to handle login independently
-        client_instance = Client(f"session_{user_id}", api_id, api_hash)
-        await client_instance.connect()
-
-    except Exception as e:
-        await message.reply(f"❌ Failed to send OTP: {e}. Please wait and try again later.")
-        return
-
-    # Send OTP code to the phone number
-    try:
-        code = await client_instance.send_code(phone_number)
-    except ApiIdInvalid:
-        await message.reply('❌ Invalid combination of API ID and API HASH. Please restart the session.')
-        return
-    except PhoneNumberInvalid:
-        await message.reply('❌ Invalid phone number. Please restart the session.')
-        return
-
-    # Ask for OTP (5-digit OTP in spaces)
-    await message.reply("Please enter the OTP you received in the format: 1 2 3 4 5.")
-    
-    try:
-        otp_code_msg = await client.listen(user_id, filters=filters.text, timeout=600)
-        phone_code = otp_code_msg.text.replace(" ", "")
-    except TimeoutError:
-        await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
-        return
-
-    try:
-        await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
-    except PhoneCodeInvalid:
-        await message.reply('❌ Invalid OTP. Please restart the session.')
-        return
-    except PhoneCodeExpired:
-        await message.reply('❌ Expired OTP. Please restart the session.')
-        return
-
-    # If two-step verification is enabled, prompt for password
-    try:
-        if await client_instance.is_password_needed():
-            await message.reply("Your account has two-step verification enabled. Please enter your password.")
-
-            password_msg = await client.listen(user_id, filters=filters.text, timeout=300)  # 5 minutes timeout
-            password = password_msg.text if password_msg else None
-            
-            if not password:
-                await message.reply("❌ No password received. Please restart the session.")
+            except Exception as e:
+                await message.reply(f"❌ Failed to send OTP: {e}. Please wait and try again later.")
                 return
 
-            await client_instance.check_password(password)
-    except PasswordHashInvalid:
-        await message.reply('❌ Invalid password. Please restart the session.')
-        return
+            # Send OTP code to the phone number
+            try:
+                code = await client_instance.send_code(phone_number)
+            except ApiIdInvalid:
+                await message.reply('❌ Invalid combination of API ID and API HASH. Please restart the session.')
+                return
+            except PhoneNumberInvalid:
+                await message.reply('❌ Invalid phone number. Please restart the session.')
+                return
 
-    # Export session string
-    string_session = await client_instance.export_session_string()
+            # Ask the user to enter the OTP with spaces
+            await message.reply("Please enter the OTP you received in the following format: 7 3 5 2 4")
 
-    # Save session string to the database
-    await db.set_session(user_id, string_session)
+            @app.on_message(filters.text & filters.user(user_id))
+            async def otp_handler(_, otp_code_msg):
+                phone_code = otp_code_msg.text.replace(" ", "")  # Remove spaces
+                
+                # Validate OTP length (5 digits)
+                if len(phone_code) != 5 or not phone_code.isdigit():
+                    await otp_code_msg.reply("❌ Invalid OTP format. Please enter a 5-digit OTP in the format: 7 3 5 2 4.")
+                    return
 
-    # Disconnect the client
-    await client_instance.disconnect()
+                try:
+                    # Attempt to log in with the provided OTP
+                    await client_instance.sign_in(phone_number, code.phone_code_hash, phone_code)
+                except PhoneCodeInvalid:
+                    await otp_code_msg.reply('❌ Invalid OTP. Please restart the session.')
+                    return
+                except PhoneCodeExpired:
+                    await otp_code_msg.reply('❌ Expired OTP. Please restart the session.')
+                    return
 
-    # Respond to the user
-    await message.reply("✅ Login successful!")
+                # If two-step verification is enabled
+                try:
+                    if await client_instance.is_password_needed():
+                        await otp_code_msg.reply("Your account has two-step verification enabled. Please enter your password.")
+                        
+                        # Wait for user to enter the password
+                        password_response = await app.listen(
+                            user_id, filters=filters.text, timeout=300  # 5 minutes timeout
+                        )
+                        
+                        password = password_response.text if password_response else None
+                        if not password:
+                            await otp_code_msg.reply('❌ No password received. Please restart the session.')
+                            return
+                        
+                        # Try to check the provided password
+                        await client_instance.check_password(password)
+                except PasswordHashInvalid:
+                    await otp_code_msg.reply('❌ Invalid password. Please restart the session.')
+                    return
+
+                # Export session string after successful login
+                string_session = await client_instance.export_session_string()
+
+                # Save session string to database
+                await db.set_session(user_id, string_session)
+
+                await client_instance.disconnect()
+
+                # Respond to the user
+                await otp_code_msg.reply("✅ Login successful!")
+            return  # End the contact handler
+        else:
+            await message.reply("❌ No valid contact received. Please try again.")
