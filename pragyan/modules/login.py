@@ -87,37 +87,7 @@ async def generate_session(client, message):
             client_instance = Client(f"session_{user_id}", api_id, api_hash)
             await client_instance.connect()
 
-            # Check if two-step verification is needed
-            try:
-                if await client_instance.is_password_needed():
-                    # Ask for the 2FA password if needed
-                    await message.reply("Your account has two-step verification enabled. Please enter your password.")
-
-                    # Wait for the user to input the password
-                    password_response = await app.listen(
-                        user_id, filters=filters.text, timeout=300  # 5 minutes timeout
-                    )
-                    
-                    password = password_response.text if password_response else None
-                    if not password:
-                        await message.reply('❌ No password received. Please restart the session.')
-                        return
-                    
-                    # Attempt to verify the password
-                    await client_instance.check_password(password)
-                    await message.reply("✅ Password verified successfully!")
-
-            except PasswordHashInvalid:
-                await message.reply('❌ Invalid password. Please restart the session.')
-                return
-            except SessionPasswordNeeded:
-                await message.reply('❌ Failed to verify the password. Please restart the session.')
-                return
-            except Exception as e:
-                await message.reply(f"❌ Error while verifying password: {str(e)}")
-                return
-
-            # Send OTP code to the phone number after password verification
+            # Attempt to log in with the provided phone number and catch SessionPasswordNeeded
             try:
                 code = await client_instance.send_code(phone_number)
             except ApiIdInvalid:
@@ -126,8 +96,29 @@ async def generate_session(client, message):
             except PhoneNumberInvalid:
                 await message.reply('❌ Invalid phone number. Please restart the session.')
                 return
+            except SessionPasswordNeeded:
+                # This error occurs if two-step verification is enabled
+                await message.reply("Your account has two-step verification enabled. Please enter your password.")
 
-            # Ask the user to enter the OTP with spaces
+                # Wait for the user to input the password
+                password_response = await app.listen(
+                    user_id, filters=filters.text, timeout=300  # 5 minutes timeout
+                )
+                
+                password = password_response.text if password_response else None
+                if not password:
+                    await message.reply('❌ No password received. Please restart the session.')
+                    return
+                
+                # Attempt to verify the password
+                try:
+                    await client_instance.check_password(password)
+                    await message.reply("✅ Password verified successfully!")
+                except PasswordHashInvalid:
+                    await message.reply('❌ Invalid password. Please restart the session.')
+                    return
+
+            # After password verification (if needed), ask the user for the OTP
             await message.reply("Please enter the OTP you received in the following format: 7 3 5 2 4")
 
             @app.on_message(filters.text & filters.user(user_id))
